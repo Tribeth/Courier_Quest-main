@@ -45,6 +45,8 @@ class Game:
 
         self.message = ""
         self.message_timer = 0
+        
+        self.player_moved_this_frame = False
 
     def show_message(self, text, duration=2.0):
         """Muestra un mensaje temporal."""
@@ -75,14 +77,11 @@ class Game:
                     if not self.city.is_blocked(new_x, new_y):
                         surface_weight = self.city.get_surface_weight(new_x, new_y)
                         
-                        # Primero verificar si puede moverse (resistencia)
                         if self.player.can_move():
-                            # Consumir resistencia ANTES de mover
                             self.player.consume_stamina(self.current_weather)
-                            
-                            # Luego mover
                             self.player.x = new_x
                             self.player.y = new_y
+                            self.player_moved_this_frame = True
                             
                             self.game_state.save_state(
                                 self.player,
@@ -209,17 +208,15 @@ class Game:
         if self.game_over:
             return
 
+        if not self.player_moved_this_frame:
+            self.player.recover_stamina(dt)
+
         self.elapsed_time += dt
 
         self.update_weather(dt)
         self.ui.update_weather_effects(self.current_weather, dt)
 
         self.order_manager.update_available(self.elapsed_time)
-
-        current_pos = (self.player.x, self.player.y)
-        if current_pos == self.player.last_position:
-            self.player.recover_stamina()
-        self.player.last_position = current_pos
 
         if self.message_timer > 0:
             self.message_timer -= dt
@@ -271,6 +268,8 @@ class Game:
         """Ejecuta el bucle principal."""
         while self.running:
             dt = self.clock.tick(60) / 1000.0
+            
+            self.player_moved_this_frame = False
 
             self.handle_input()
             self.update(dt)

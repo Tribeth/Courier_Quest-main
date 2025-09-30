@@ -24,8 +24,7 @@ class Player:
 
         self.base_speed = 3
         self.stamina_consumption_base = 0.5
-        self.last_position = (x, y)
-
+        
         self.deliveries_streak = 0
         self.first_late_today = True
 
@@ -60,31 +59,25 @@ class Player:
         total_weight = self.get_total_weight()
         consumption = self.stamina_consumption_base
 
-        # Penalización por peso
         if total_weight > 3:
             consumption += 0.2 * (total_weight - 3)
 
-        # Penalización por clima
         if weather_condition in ["rain", "wind"]:
             consumption += 0.1
-        elif weather_condition == "rain_light":
-            consumption += 0.05
         elif weather_condition == "storm":
             consumption += 0.3
         elif weather_condition == "heat":
             consumption += 0.2
-        elif weather_condition == "cold":
-            consumption += 0.1
-
+        
         self.stamina = max(0, self.stamina - consumption)
 
         if self.stamina <= 0:
             self.is_exhausted = True
 
-    def recover_stamina(self, in_rest_point=False):
+    def recover_stamina(self, dt, in_rest_point=False):
         """Recupera resistencia."""
-        recovery = STAMINA_RECOVERY_AT_POINT if in_rest_point else STAMINA_RECOVERY_RESTING
-        self.stamina = min(100, self.stamina + recovery)
+        recovery_rate = STAMINA_RECOVERY_AT_POINT if in_rest_point else STAMINA_RECOVERY_RESTING
+        self.stamina = min(100, self.stamina + recovery_rate * dt)
 
         if self.stamina >= STAMINA_EXHAUSTED_THRESHOLD and self.is_exhausted:
             self.is_exhausted = False
