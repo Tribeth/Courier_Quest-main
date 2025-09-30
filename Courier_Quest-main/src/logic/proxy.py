@@ -88,7 +88,7 @@ class Proxy:
         return data.get("data", data)
 
     def get_jobs(self):
-        """Obtiene datos de pedidos."""
+        """Obtiene datos de pedidos y valida posiciones."""
         if not self.offline:
             try:
                 result = requests.get(f"{self.base_url}city/jobs", timeout=5)
@@ -102,4 +102,39 @@ class Proxy:
         else:
             data = self._load_cache("pedidos.json")
         
-        return data.get("data", data)
+        jobs = data.get("data", data)
+        
+        # Validar y corregir posiciones de pedidos
+        map_data = self.get_map()
+        from .city import City
+        city = City(map_data)
+        
+        for job in jobs:
+            pickup = job.get("pickup", [0, 0])
+            dropoff = job.get("dropoff", [0, 0])
+            
+            # Si pickup está bloqueado, buscar posición válida cercana
+            if city.is_blocked(pickup[0], pickup[1]):
+                job["pickup"] = self._find_nearby_walkable(city, pickup[0], pickup[1])
+            
+            # Si dropoff está bloqueado, buscar posición válida cercana
+            if city.is_blocked(dropoff[0], dropoff[1]):
+                job["dropoff"] = self._find_nearby_walkable(city, dropoff[0], dropoff[1])
+        
+        return jobs
+    
+    def _find_nearby_walkable(self, city, x, y):
+        """Encuentra la posición caminable más cercana."""
+        # Buscar en espiral desde la posición original
+        for radius in range(1, 10):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    new_x = x + dx
+                    new_y = y + dy
+                    
+                    if 0 <= new_x < city.width and 0 <= new_y < city.height:
+                        if not city.is_blocked(new_x, new_y):
+                            return [new_x, new_y]
+        
+        # Si no encuentra, usar posición aleatoria
+        return city.get_random_walkable_position()

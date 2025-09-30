@@ -1,4 +1,6 @@
 import pygame
+import random
+import math
 
 
 class UIManager:
@@ -33,22 +35,108 @@ class UIManager:
         self.map_offset_y = 50
         self.tile_size = 30
         
+        # Cámara
+        self.camera_x = 0
+        self.camera_y = 0
+        
+        # Partículas de clima
+        self.rain_particles = []
+        self.wind_particles = []
+        
+    def update_camera(self, player_x, player_y, map_width, map_height):
+        """Centra la cámara en el jugador"""
+        view_width = self.screen_width - self.map_offset_x
+        view_height = self.screen_height - 100
+        
+        target_x = player_x * self.tile_size - view_width // 2
+        target_y = player_y * self.tile_size - view_height // 2
+        
+        max_x = map_width * self.tile_size - view_width
+        max_y = map_height * self.tile_size - view_height
+        
+        self.camera_x = max(0, min(target_x, max_x))
+        self.camera_y = max(0, min(target_y, max_y))
+    
+    def update_weather_effects(self, weather, dt):
+        """Actualiza partículas de clima"""
+        view_width = self.screen_width - self.map_offset_x
+        view_height = self.screen_height - 100
+        
+        if weather in ['rain', 'rain_light', 'storm']:
+            intensity = 5 if weather == 'storm' else 3 if weather == 'rain' else 1
+            for _ in range(intensity):
+                self.rain_particles.append({
+                    'x': random.randint(self.map_offset_x, self.screen_width),
+                    'y': self.map_offset_y,
+                    'speed': random.randint(400, 600)
+                })
+        
+        if weather in ['wind', 'storm']:
+            if random.random() < 0.1:
+                self.wind_particles.append({
+                    'x': self.map_offset_x,
+                    'y': random.randint(self.map_offset_y, self.map_offset_y + view_height),
+                    'speed': random.randint(200, 400)
+                })
+        
+        # Actualizar lluvia
+        for p in self.rain_particles[:]:
+            p['y'] += p['speed'] * dt
+            if p['y'] > self.map_offset_y + view_height:
+                self.rain_particles.remove(p)
+        
+        # Actualizar viento
+        for p in self.wind_particles[:]:
+            p['x'] += p['speed'] * dt
+            if p['x'] > self.screen_width:
+                self.wind_particles.remove(p)
+    
+    def draw_weather_effects(self, surface, weather):
+        """Dibuja efectos visuales del clima"""
+        # Overlay de clima
+        overlay = pygame.Surface((self.screen_width - self.map_offset_x, 
+                                 self.screen_height - 100), pygame.SRCALPHA)
+        
+        if weather == 'storm':
+            overlay.fill((20, 20, 40, 100))
+        elif weather in ['rain', 'rain_light']:
+            overlay.fill((30, 30, 50, 50))
+        elif weather == 'fog':
+            overlay.fill((200, 200, 200, 80))
+        elif weather == 'heat':
+            overlay.fill((255, 200, 100, 30))
+        
+        surface.blit(overlay, (self.map_offset_x, self.map_offset_y))
+        
+        # Dibujar lluvia
+        for p in self.rain_particles:
+            pygame.draw.line(surface, (150, 150, 200), 
+                           (p['x'], p['y']), (p['x'] - 2, p['y'] + 10), 1)
+        
+        # Dibujar viento
+        for p in self.wind_particles:
+            pygame.draw.line(surface, (200, 200, 200, 100),
+                           (p['x'], p['y']), (p['x'] + 30, p['y']), 2)
+        
+        # Flash de tormenta
+        if weather == 'storm' and random.random() < 0.01:
+            flash = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+            flash.fill((255, 255, 255, 150))
+            surface.blit(flash, (0, 0))
+        
     def draw_hud(self, surface, player, game_time, weather, elapsed):
         """Dibuja el HUD principal."""
-        # Panel izquierdo
         panel_rect = pygame.Rect(0, 0, 190, self.screen_height)
         pygame.draw.rect(surface, self.colors['panel'], panel_rect)
         
         y = 10
         
-        # Tiempo restante
         time_left = int(game_time - elapsed)
         time_color = self.colors['danger'] if time_left < 60 else self.colors['text']
         self._draw_text(surface, f"Tiempo: {time_left}s", 10, y, 
                        self.font_medium, time_color)
         y += 35
         
-        # Ingresos
         progress = player.total_income / player.income_goal
         income_color = (self.colors['success'] if progress >= 1.0 
                        else self.colors['warning'] if progress >= 0.7
@@ -63,7 +151,6 @@ class UIManager:
                        self.font_small, self.colors['text_dim'])
         y += 30
         
-        # Resistencia
         stamina_pct = player.stamina / 100
         stamina_color = (self.colors['danger'] if stamina_pct < 0.3
                         else self.colors['warning'] if stamina_pct < 0.6
@@ -74,7 +161,6 @@ class UIManager:
         self._draw_progress_bar(surface, 10, y, 170, 12, stamina_pct, stamina_color)
         y += 25
         
-        # Reputación
         rep_pct = player.reputation / 100
         rep_color = (self.colors['danger'] if rep_pct < 0.3
                     else self.colors['warning'] if rep_pct < 0.7
@@ -85,12 +171,17 @@ class UIManager:
         self._draw_progress_bar(surface, 10, y, 170, 12, rep_pct, rep_color)
         y += 30
         
-        # Clima
-        self._draw_text(surface, f"Clima: {weather}", 10, y,
+        # Mostrar clima con símbolo
+        weather_symbols = {
+            'clear': '☀️', 'clouds': '☁️', 'rain': '🌧️', 
+            'rain_light': '🌦️', 'storm': '⛈️', 'fog': '🌫️',
+            'wind': '💨', 'heat': '🔥', 'cold': '❄️'
+        }
+        symbol = weather_symbols.get(weather, '')
+        self._draw_text(surface, f"{symbol} {weather}", 10, y,
                        self.font_small, self.colors['text_dim'])
         y += 25
         
-        # Inventario
         weight_pct = player.inventory.current_weight / player.inventory.max_weight
         self._draw_text(surface, f"Peso: {player.inventory.current_weight}/{player.inventory.max_weight}", 
                        10, y, self.font_small, self.colors['text_dim'])
@@ -100,14 +191,21 @@ class UIManager:
         self._draw_text(surface, f"Pedidos: {player.inventory.order_count}", 10, y,
                        self.font_small, self.colors['text_dim'])
         
-    def draw_map(self, surface, city, player_x, player_y):
-        """Dibuja el mapa de la ciudad."""
+    def draw_map(self, surface, city, player_x, player_y, available_orders):
+        """Dibuja el mapa con cámara centrada"""
+        self.update_camera(player_x, player_y, city.width, city.height)
+        
         for y, row in enumerate(city.tiles):
             for x, tile in enumerate(row):
-                screen_x = self.map_offset_x + x * self.tile_size
-                screen_y = self.map_offset_y + y * self.tile_size
+                screen_x = self.map_offset_x + x * self.tile_size - self.camera_x
+                screen_y = self.map_offset_y + y * self.tile_size - self.camera_y
                 
-                # Color según tipo
+                if (screen_x < self.map_offset_x - self.tile_size or 
+                    screen_x > self.screen_width or
+                    screen_y < self.map_offset_y - self.tile_size or 
+                    screen_y > self.screen_height - 100):
+                    continue
+                
                 if tile == 'C':
                     color = self.colors['road']
                 elif tile == 'B':
@@ -120,9 +218,14 @@ class UIManager:
                 rect = pygame.Rect(screen_x, screen_y, self.tile_size - 2, self.tile_size - 2)
                 pygame.draw.rect(surface, color, rect)
         
+        # Dibujar marcadores de pedidos disponibles
+        for order in available_orders:
+            pickup = order['pickup']
+            self._draw_map_marker_camera(surface, pickup, (100, 255, 100), "P")
+        
         # Dibujar jugador
-        px = self.map_offset_x + player_x * self.tile_size
-        py = self.map_offset_y + player_y * self.tile_size
+        px = self.map_offset_x + player_x * self.tile_size - self.camera_x
+        py = self.map_offset_y + player_y * self.tile_size - self.camera_y
         player_rect = pygame.Rect(px + 5, py + 5, self.tile_size - 12, self.tile_size - 12)
         pygame.draw.rect(surface, self.colors['player'], player_rect)
         pygame.draw.rect(surface, (255, 255, 255), player_rect, 2)
@@ -134,7 +237,6 @@ class UIManager:
         
         order = inventory.current_order.order
         
-        # Panel inferior
         panel_y = self.screen_height - 120
         panel_rect = pygame.Rect(self.map_offset_x, panel_y, 
                                  self.screen_width - self.map_offset_x, 120)
@@ -144,13 +246,11 @@ class UIManager:
         x = self.map_offset_x + 10
         y = panel_y + 10
         
-        # Título
         priority_text = f"⭐ Prioridad {order.priority}" if order.priority > 0 else ""
         self._draw_text(surface, f"Pedido Actual: {order.id} {priority_text}", 
                        x, y, self.font_medium, self.colors['success'])
         y += 30
         
-        # Detalles
         self._draw_text(surface, f"Peso: {order.weight}kg | Pago: ${order.payout}", 
                        x, y, self.font_small, self.colors['text'])
         y += 22
@@ -160,9 +260,7 @@ class UIManager:
         self._draw_text(surface, f"Deadline: {order.deadline.split('T')[1]}", 
                        x, y, self.font_small, self.colors['text_dim'])
         
-        # Dibujar marcadores en el mapa
-        self._draw_map_marker(surface, city, order.pickup, (100, 255, 100), "P")
-        self._draw_map_marker(surface, city, order.dropoff, (255, 100, 100), "D")
+        self._draw_map_marker_camera(surface, order.dropoff, (255, 100, 100), "D")
     
     def draw_available_orders(self, surface, orders, start_y=50):
         """Dibuja panel de pedidos disponibles."""
@@ -172,24 +270,21 @@ class UIManager:
         panel_x = self.screen_width - 250
         panel_width = 240
         
-        # Fondo
         panel_rect = pygame.Rect(panel_x, start_y, panel_width, 
                                 min(400, len(orders) * 70 + 40))
         pygame.draw.rect(surface, self.colors['panel'], panel_rect)
         pygame.draw.rect(surface, self.colors['text_dim'], panel_rect, 2)
         
-        # Título
         self._draw_text(surface, "Pedidos Disponibles", panel_x + 10, start_y + 10,
                        self.font_medium, self.colors['text'])
         
         y = start_y + 45
-        for i, order in enumerate(orders[:5]):  # Mostrar máximo 5
+        for i, order in enumerate(orders[:5]):
             self._draw_order_item(surface, order, panel_x + 10, y, panel_width - 20)
             y += 70
     
     def _draw_order_item(self, surface, order, x, y, width):
         """Dibuja un item de pedido."""
-        # ID y prioridad
         color = self.colors['warning'] if order.get('priority', 0) > 0 else self.colors['text']
         self._draw_text(surface, order['id'], x, y, self.font_small, color)
         
@@ -197,7 +292,6 @@ class UIManager:
             self._draw_text(surface, f"⭐{order['priority']}", x + width - 30, y,
                            self.font_small, self.colors['warning'])
         
-        # Detalles
         y += 18
         self._draw_text(surface, f"${order['payout']} | {order['weight']}kg", 
                        x, y, self.font_small, self.colors['text_dim'])
@@ -206,11 +300,15 @@ class UIManager:
         self._draw_text(surface, f"⏰ {deadline_time}", x, y, 
                        self.font_small, self.colors['text_dim'])
     
-    def _draw_map_marker(self, surface, city, pos, color, text):
-        """Dibuja marcador en el mapa."""
+    def _draw_map_marker_camera(self, surface, pos, color, text):
+        """Dibuja marcador considerando la cámara"""
         x, y = pos
-        screen_x = self.map_offset_x + x * self.tile_size + self.tile_size // 2
-        screen_y = self.map_offset_y + y * self.tile_size + self.tile_size // 2
+        screen_x = self.map_offset_x + x * self.tile_size + self.tile_size // 2 - self.camera_x
+        screen_y = self.map_offset_y + y * self.tile_size + self.tile_size // 2 - self.camera_y
+        
+        if (screen_x < self.map_offset_x or screen_x > self.screen_width or
+            screen_y < self.map_offset_y or screen_y > self.screen_height - 120):
+            return
         
         pygame.draw.circle(surface, color, (screen_x, screen_y), 8)
         pygame.draw.circle(surface, (255, 255, 255), (screen_x, screen_y), 8, 2)
@@ -221,16 +319,13 @@ class UIManager:
     
     def _draw_progress_bar(self, surface, x, y, width, height, progress, color):
         """Dibuja barra de progreso."""
-        # Fondo
         bg_rect = pygame.Rect(x, y, width, height)
         pygame.draw.rect(surface, (50, 50, 50), bg_rect)
         
-        # Progreso
         fill_width = int(width * min(1.0, progress))
         fill_rect = pygame.Rect(x, y, fill_width, height)
         pygame.draw.rect(surface, color, fill_rect)
         
-        # Borde
         pygame.draw.rect(surface, self.colors['text_dim'], bg_rect, 1)
     
     def _draw_text(self, surface, text, x, y, font, color):

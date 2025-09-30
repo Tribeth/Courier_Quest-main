@@ -26,7 +26,6 @@ class Player:
         self.stamina_consumption_base = 0.5
         self.last_position = (x, y)
 
-        # Estadísticas para reputación
         self.deliveries_streak = 0
         self.first_late_today = True
 
@@ -61,15 +60,21 @@ class Player:
         total_weight = self.get_total_weight()
         consumption = self.stamina_consumption_base
 
+        # Penalización por peso
         if total_weight > 3:
             consumption += 0.2 * (total_weight - 3)
 
+        # Penalización por clima
         if weather_condition in ["rain", "wind"]:
             consumption += 0.1
+        elif weather_condition == "rain_light":
+            consumption += 0.05
         elif weather_condition == "storm":
             consumption += 0.3
         elif weather_condition == "heat":
             consumption += 0.2
+        elif weather_condition == "cold":
+            consumption += 0.1
 
         self.stamina = max(0, self.stamina - consumption)
 
@@ -84,14 +89,9 @@ class Player:
         if self.stamina >= STAMINA_EXHAUSTED_THRESHOLD and self.is_exhausted:
             self.is_exhausted = False
 
-    def move(self, dx, dy, weather_condition, surface_weight_tile):
-        """Mueve al jugador y consume resistencia."""
-        if not self.is_exhausted:
-            self.x += dx
-            self.y += dy
-            self.consume_stamina(weather_condition)
-            return True
-        return False
+    def can_move(self):
+        """Verifica si el jugador puede moverse (no exhausto)."""
+        return not self.is_exhausted and self.stamina > 0
 
     def accept_order(self, order):
         """Acepta un pedido y lo añade al inventario."""
@@ -111,7 +111,6 @@ class Player:
         deadline = datetime.fromisoformat(order.deadline)
         time_diff = (deadline - current_time).total_seconds()
 
-        # Calcular cambio de reputación
         rep_change = 0
         if time_diff >= 0:
             if time_diff >= 0.20 * ORDER_BASE_TIME_SECONDS:
@@ -128,28 +127,24 @@ class Player:
             else:
                 rep_change = REP_PENALTY_VERY_LATE
 
-            # Primera tardanza del día con reputación alta
             if self.first_late_today and self.reputation >= 85:
                 rep_change //= 2
                 self.first_late_today = False
 
             self.deliveries_streak = 0
 
-        # Bonus por racha
         if self.deliveries_streak >= 3:
             rep_change += REP_BONUS_STREAK
             self.deliveries_streak = 0
 
         self.reputation = max(0, min(100, self.reputation + rep_change))
 
-        # Calcular pago
         payout = order.payout
         if self.reputation >= 90:
             payout *= 1.05
 
         self.total_income += payout
 
-        # Completar orden en inventario
         completed = self.inventory.complete_current_order()
 
         return {

@@ -1,3 +1,6 @@
+import random
+
+
 class City:
     """Representa el mapa de la ciudad."""
     
@@ -28,6 +31,26 @@ class City:
         if tile and tile in self.legend:
             return self.legend[tile].get("blocked", False)
         return True
+    
+    def get_random_walkable_position(self):
+        """Retorna posición aleatoria caminable (calle o parque)."""
+        attempts = 0
+        while attempts < 100:
+            x = random.randint(0, self.width - 1)
+            y = random.randint(0, self.height - 1)
+            
+            if not self.is_blocked(x, y):
+                return [x, y]
+            
+            attempts += 1
+        
+        # Fallback: buscar la primera posición válida
+        for y in range(self.height):
+            for x in range(self.width):
+                if not self.is_blocked(x, y):
+                    return [x, y]
+        
+        return [0, 0]
 
 
 class OrderManager:

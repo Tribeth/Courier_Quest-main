@@ -19,35 +19,30 @@ class Game:
         pygame.display.set_caption("Courier Quest")
         self.clock = pygame.time.Clock()
 
-        # Cargar datos del API
         proxy = Proxy()
         map_data = proxy.get_map()
         jobs_data = proxy.get_jobs()
         self.weather = proxy.get_weather()
 
-        # Inicializar componentes
         self.city = City(map_data)
         self.order_manager = OrderManager(jobs_data)
         self.player = Player(1, 1, self.city.goal)
         self.game_state = GameState()
         self.ui = UIManager(1200, 800)
 
-        # Variables de tiempo
-        self.game_duration = 600  # 10 minutos
+        self.game_duration = 600
         self.start_time = datetime.now()
         self.elapsed_time = 0
         self.running = True
         self.game_over = False
         self.victory = False
 
-        # Sistema de clima
         self.current_weather = self.weather.state
         self.next_weather = self.weather.state
         self.weather_timer = random.uniform(45, 60)
         self.weather_transition_time = 0
         self.in_transition = False
 
-        # Mensajes
         self.message = ""
         self.message_timer = 0
 
@@ -63,7 +58,6 @@ class Game:
                 self.running = False
 
             if event.type == pygame.KEYDOWN and not self.game_over:
-                # Movimiento
                 dx, dy = 0, 0
                 if event.key == pygame.K_UP:
                     dy = -1
@@ -74,15 +68,22 @@ class Game:
                 elif event.key == pygame.K_RIGHT:
                     dx = 1
 
-                # Ejecutar movimiento
                 if dx != 0 or dy != 0:
                     new_x = self.player.x + dx
                     new_y = self.player.y + dy
 
                     if not self.city.is_blocked(new_x, new_y):
                         surface_weight = self.city.get_surface_weight(new_x, new_y)
-
-                        if self.player.move(dx, dy, self.current_weather, surface_weight):
+                        
+                        # Primero verificar si puede moverse (resistencia)
+                        if self.player.can_move():
+                            # Consumir resistencia ANTES de mover
+                            self.player.consume_stamina(self.current_weather)
+                            
+                            # Luego mover
+                            self.player.x = new_x
+                            self.player.y = new_y
+                            
                             self.game_state.save_state(
                                 self.player,
                                 self.player.inventory,
@@ -95,7 +96,6 @@ class Game:
                     else:
                         self.show_message("No puedes moverte ahí")
 
-                # Inventario
                 if event.key == pygame.K_n:
                     self.player.inventory.view_next_order()
                     self.show_message("Siguiente pedido")
@@ -109,20 +109,16 @@ class Game:
                     self.player.inventory.sort_inventory(lambda o: o.deadline)
                     self.show_message("Ordenado por deadline")
 
-                # Aceptar pedido
                 if event.key == pygame.K_a:
                     self.accept_order_at_location()
 
-                # Completar entrega
                 if event.key == pygame.K_RETURN:
                     self.complete_delivery()
 
-                # Cancelar pedido
                 if event.key == pygame.K_c:
                     if self.player.cancel_order():
                         self.show_message("Pedido cancelado (-4 reputación)")
 
-                # Guardar/Cargar
                 if event.key == pygame.K_F5:
                     self.save_game(1)
                     self.show_message("Juego guardado")
@@ -130,7 +126,6 @@ class Game:
                     if self.load_game(1):
                         self.show_message("Juego cargado")
 
-                # Deshacer
                 if event.key == pygame.K_u:
                     state = self.game_state.undo(1)
                     if state:
@@ -216,22 +211,19 @@ class Game:
 
         self.elapsed_time += dt
 
-        # Actualizar clima
         self.update_weather(dt)
+        self.ui.update_weather_effects(self.current_weather, dt)
 
-        # Actualizar pedidos disponibles
         self.order_manager.update_available(self.elapsed_time)
 
-        # Recuperar resistencia si está quieto
-        if (self.player.x, self.player.y) == self.player.last_position:
+        current_pos = (self.player.x, self.player.y)
+        if current_pos == self.player.last_position:
             self.player.recover_stamina()
-        self.player.last_position = (self.player.x, self.player.y)
+        self.player.last_position = current_pos
 
-        # Actualizar mensaje
         if self.message_timer > 0:
             self.message_timer -= dt
 
-        # Verificar condiciones de victoria/derrota
         if self.player.is_defeated():
             self.end_game(False)
 
@@ -245,27 +237,23 @@ class Game:
         """Dibuja el juego."""
         self.screen.fill((20, 20, 30))
 
-        # Dibujar mapa
-        self.ui.draw_map(self.screen, self.city, self.player.x, self.player.y)
+        available = self.order_manager.get_available()
+        self.ui.draw_map(self.screen, self.city, self.player.x, self.player.y, available)
+        
+        self.ui.draw_weather_effects(self.screen, self.current_weather)
 
-        # Dibujar HUD
         self.ui.draw_hud(self.screen, self.player, self.game_duration,
                         self.current_weather, self.elapsed_time)
 
-        # Dibujar pedido actual
         self.ui.draw_current_order(self.screen, self.player.inventory, self.city)
 
-        # Dibujar pedidos disponibles
-        available = self.order_manager.get_available()
         self.ui.draw_available_orders(self.screen, available)
 
-        # Mensaje temporal
         if self.message_timer > 0:
             font = pygame.font.Font(None, 32)
             text = font.render(self.message, True, (255, 255, 100))
             rect = text.get_rect(center=(600, 400))
 
-            # Fondo semi-transparente
             bg = pygame.Surface((rect.width + 40, rect.height + 20))
             bg.set_alpha(200)
             bg.fill((0, 0, 0))
@@ -273,7 +261,6 @@ class Game:
             self.screen.blit(bg, bg_rect)
             self.screen.blit(text, rect)
 
-        # Pantalla de fin de juego
         if self.game_over:
             score = self.calculate_score()
             self.ui.draw_game_over(self.screen, self.victory, score)
@@ -304,7 +291,6 @@ class Game:
         """Carga una partida."""
         data = self.game_state.load_game(slot)
         if data:
-            # Restaurar player
             p = data['player']
             self.player.x = p['x']
             self.player.y = p['y']
@@ -312,14 +298,12 @@ class Game:
             self.player.reputation = p['reputation']
             self.player.total_income = p['total_income']
 
-            # Restaurar inventario
             from src.logic.inventory import Inventory
             self.player.inventory = Inventory()
             for order_data in data['inventory']:
                 order = Order.from_dict(order_data)
                 self.player.inventory.add_order(order)
 
-            # Restaurar datos de juego
             gd = data['game_data']
             self.elapsed_time = gd['elapsed_time']
             self.current_weather = gd['weather_state']
