@@ -1,6 +1,13 @@
 [
   {
     "name": "Player",
+    "score": 1100,
+    "income": 1100.0,
+    "reputation": 20,
+    "date": "2025-09-30T16:13:39.644076"
+  },
+  {
+    "name": "Player",
     "score": 0,
     "income": 0,
     "reputation": 70,

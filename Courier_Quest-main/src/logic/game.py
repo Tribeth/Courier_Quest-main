@@ -30,9 +30,15 @@ class Game:
         self.game_state = GameState()
         self.ui = UIManager(1200, 800)
 
-        self.game_duration = 600
-        self.start_time = datetime.now()
-        self.elapsed_time = 0
+        # CAMBIO IMPORTANTE: Duración del juego en segundos (15 minutos)
+        self.game_duration = 900  # 15 minutos = 900 segundos
+        
+        # Hora de inicio del juego (simulada como si fuera 12:00 PM)
+        # Esto debe coincidir con los horarios de los pedidos del API
+        self.game_start_datetime = datetime(2025, 9, 1, 12, 0, 0)
+        
+        self.start_time = pygame.time.get_ticks() / 1000.0  # Tiempo real en segundos
+        self.elapsed_time = 0  # Tiempo transcurrido en el juego
         self.running = True
         self.game_over = False
         self.victory = False
@@ -47,6 +53,10 @@ class Game:
         self.message_timer = 0
         
         self.player_moved_this_frame = False
+
+    def get_current_game_datetime(self):
+        """Obtiene la fecha/hora actual del juego basada en el tiempo transcurrido."""
+        return self.game_start_datetime + timedelta(seconds=self.elapsed_time)
 
     def show_message(self, text, duration=2.0):
         """Muestra un mensaje temporal."""
@@ -168,13 +178,21 @@ class Game:
             self.show_message("Debes estar en el punto de entrega")
             return
 
-        result = self.player.complete_delivery(
-            self.start_time + timedelta(seconds=self.elapsed_time)
-        )
+        # Usar la hora actual del juego para la entrega
+        current_game_time = self.get_current_game_datetime()
+        
+        result = self.player.complete_delivery(current_game_time)
 
         if result:
             msg = f"¡Entregado! +${int(result['payout'])} | Rep: {result['rep_change']:+d}"
             self.show_message(msg, 3.0)
+            
+            # Debug info
+            print(f"\n=== Entrega completada ===")
+            print(f"Hora actual del juego: {current_game_time}")
+            print(f"Deadline del pedido: {result['order'].deadline}")
+            print(f"Cambio de reputación: {result['rep_change']}")
+            print(f"Reputación actual: {self.player.reputation}")
 
     def update_weather(self, dt):
         """Actualiza sistema de clima con transición suave."""
@@ -239,8 +257,10 @@ class Game:
         
         self.ui.draw_weather_effects(self.screen, self.current_weather)
 
+        # Pasar el tiempo actual del juego al HUD
+        current_game_time = self.get_current_game_datetime()
         self.ui.draw_hud(self.screen, self.player, self.game_duration,
-                        self.current_weather, self.elapsed_time)
+                        self.current_weather, self.elapsed_time, current_game_time)
 
         self.ui.draw_current_order(self.screen, self.player.inventory, self.city)
 
@@ -282,7 +302,8 @@ class Game:
         game_data = {
             'elapsed_time': self.elapsed_time,
             'weather_state': self.current_weather,
-            'weather_timer': self.weather_timer
+            'weather_timer': self.weather_timer,
+            'game_start_datetime': self.game_start_datetime.isoformat()
         }
         self.game_state.save_game(slot, self.player, self.player.inventory, game_data)
 
@@ -307,6 +328,10 @@ class Game:
             self.elapsed_time = gd['elapsed_time']
             self.current_weather = gd['weather_state']
             self.weather_timer = gd['weather_timer']
+            
+            # Restaurar la hora de inicio del juego
+            if 'game_start_datetime' in gd:
+                self.game_start_datetime = datetime.fromisoformat(gd['game_start_datetime'])
 
             return True
         return False
@@ -347,6 +372,7 @@ class Game:
         print(f"Puntaje final: {score}")
         print(f"Ingresos: ${self.player.total_income}")
         print(f"Reputación: {self.player.reputation}")
+        print(f"Tiempo jugado: {int(self.elapsed_time // 60)}:{int(self.elapsed_time % 60):02d}")
         print(f"{'='*50}\n")
 
 

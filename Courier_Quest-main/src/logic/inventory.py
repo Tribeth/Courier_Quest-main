@@ -78,63 +78,43 @@ class Inventory:
 
     def sort_inventory(self, key):
         """
-        Sorts the inventory in-place in descending order according to the provided key function.
-
+        Ordena el inventario in-place en orden DESCENDENTE según la función key.
+        Usa algoritmo de ordenamiento por inserción optimizado.
+        
         Args:
-            key (callable): A function that takes an Order object and returns a value to sort by (e.g., lambda o: o.weight).
+            key (callable): Función que toma un Order y retorna un valor comparable
         """
         if not self.first or not self.first.next:
-            print("Inventory is already sorted or empty.")
-            return
-        """
-        The sorting is done in descending order.
-        """
-        if not self.first or not self.first.next:
-            print("Inventory is already sorted or empty.")
+            print("Inventory has less than 2 items, no sorting needed.")
             return
 
-        # Save the current order's id to restore the pointer after sorting
+        # Guardar el ID del pedido actual para restaurarlo después
         current_id = self.current_order.order.id if self.current_order else None
 
-        sorted_head = None
+        # Convertir lista enlazada a lista Python para ordenar más fácilmente
+        nodes_list = []
         current = self.first
-
-        # Perform insertion sort on the linked list
         while current:
-            next_to_process = current.next
-            current.prev = None
-            current.next = None
+            nodes_list.append(current)
+            current = current.next
 
-            # Insert at the beginning if sorted_head is None or current's key is greater
-            if (sorted_head is None or
-                key(current.order) > key(sorted_head.order)):
-                current.next = sorted_head
-                if sorted_head:
-                    sorted_head.prev = current
-                sorted_head = current
+        # Ordenar usando sorted() con el key, en orden DESCENDENTE
+        nodes_list.sort(key=lambda node: key(node.order), reverse=True)
+
+        # Reconstruir la lista enlazada con el orden nuevo
+        for i, node in enumerate(nodes_list):
+            if i == 0:
+                self.first = node
+                node.prev = None
             else:
-                # Find the correct position to insert current node
-                seeker = sorted_head
-                while (seeker.next and
-                       key(seeker.next.order) >= key(current.order)):
-                    seeker = seeker.next
+                node.prev = nodes_list[i - 1]
+                nodes_list[i - 1].next = node
+            
+            if i == len(nodes_list) - 1:
+                self.last = node
+                node.next = None
 
-                current.next = seeker.next
-                if seeker.next:
-                    seeker.next.prev = current
-                seeker.next = current
-                current.prev = seeker
-
-            current = next_to_process
-
-        # Update first and last pointers
-        self.first = sorted_head
-        last_node = self.first
-        while last_node.next:
-            last_node = last_node.next
-        self.last = last_node
-
-        # Restore the current_order pointer
+        # Restaurar el puntero current_order
         if current_id is not None:
             node = self.first
             while node:
@@ -142,5 +122,7 @@ class Inventory:
                     self.current_order = node
                     break
                 node = node.next
+        else:
+            self.current_order = self.first
 
-        print("Inventory sorted.")
+        print("Inventory sorted successfully.")
